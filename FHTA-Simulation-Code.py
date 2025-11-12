@@ -19,7 +19,7 @@ COLDSPOT_STD = 0.05
 
 # first, create coldspot
 data = np.clip(np.random.normal(COLDSPOT_TEMPERATURE, COLDSPOT_STD, (ROWS, COLS)), HOTSPOT_MIN_TEMPERATURE, HOTSPOT_MAX_TEMPERATURE * 0.3)
-initialData = data.copy() # 고열원 없는 배경 데이터
+initialData = data.copy()
 
 # second, create hotspot and heat around area
 hotspots = []
