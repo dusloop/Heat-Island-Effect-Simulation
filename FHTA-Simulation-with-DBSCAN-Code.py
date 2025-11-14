@@ -1,12 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-# 군집화 (Clustering)를 위해 scikit-learn 라이브러리에서 DBSCAN을 불러옵니다.
 from sklearn.cluster import DBSCAN
 
-# 군집의 중심을 계산하기 위해 NumPy를 사용합니다.
-
-# --- 시뮬레이션 설정 ---
+# 1) setting random heatmap simulation
 ROWS = 150
 COLS = 90
 
@@ -18,40 +15,44 @@ HOTSPOT_MAX_TEMPERATURE = 1.0
 HOTSPOT_MIN_SCALE = 3
 HOTSPOT_MAX_SCALE = 12
 
-# feature of coldspot
-COLDSPOT_TEMPERATURE = 0.1
-COLDSPOT_STD = 0.05
+# feature of position which is not hotspot
+MAP_AVERAGE_TEMPERATURE = 0.1
+MAP_STD = 0.05
 
-# --- 탐색 및 군집화 설정 ---
-# 1. 브루트 포스 임계값: 핫스팟 후보를 찾을 최소 온도 (이전과 동일)
+# setting clustering
 HOTSPOT_THRESHOLD = 0.7
 
-# 2. DBSCAN 군집화 매개변수
-# eps (epsilon): 한 점으로부터 이 거리(픽셀) 이내에 있는 점들을 이웃으로 간주합니다.
-#               핫스팟의 퍼짐 정도(scale)에 따라 조정해야 합니다.
+# 2) setting DBSCAN clustering parameter
+# eps (epsilon): regard pixels in particular distance as neighbor, adapt depend on scale
 DBSCAN_EPS = 15
-# min_samples: 중심점(Core point)이 되기 위해 필요한 최소 이웃 수.
+# min_samples: min number of neighbor points  to be the center.
 DBSCAN_MIN_SAMPLES = 10
 
-# --- 1. 시뮬레이션 데이터 생성 (Coldspot) ---
-data = np.clip(np.random.normal(COLDSPOT_TEMPERATURE, COLDSPOT_STD, (ROWS, COLS)), HOTSPOT_MIN_TEMPERATURE,
+# 3) create random heatmap
+# np.clip: constrain values, it consists of array, a_min, a_max
+# array: list that wil be restricted
+# np.random.normal: consist of loc, scale, size
+# loc: average of normal distribution
+# scale: standard deviation which makes normal distribution more dilated
+# size: (n, m) -> 2D array n*m
+data = np.clip(np.random.normal(MAP_AVERAGE_TEMPERATURE, MAP_STD, (ROWS, COLS)), HOTSPOT_MIN_TEMPERATURE,
                HOTSPOT_MAX_TEMPERATURE * 0.3)
 
-# --- 2. 시뮬레이션 데이터 생성 (Hotspot) ---
-actual_hotspots = []
+# create simulation data
+actualHotspot = []
 for _ in range(NUMBER_OF_HOTSPOTS):
     centerY = random.randint(0, ROWS - 1)
     centerX = random.randint(0, COLS - 1)
     spreadScale = random.uniform(HOTSPOT_MIN_SCALE, HOTSPOT_MAX_SCALE)
 
-    actual_hotspots.append({
+    actualHotspot.append({
         'y': centerY,
         'x': centerX,
         'scale': spreadScale
     })
 
-# --- 3. 온도 기여도 설정 ---
-for hotspot in actual_hotspots:
+# set contribution of temp
+for hotspot in actualHotspot:
     centerY = hotspot['y']
     centerX = hotspot['x']
     spreadScale = hotspot['scale']
@@ -59,58 +60,60 @@ for hotspot in actual_hotspots:
     for y in range(ROWS):
         for x in range(COLS):
             distance = (x - centerX) ** 2 + (y - centerY) ** 2
-            temperatureContribution = np.exp(-distance / (2 * spreadScale ** 2))
-            data[y, x] = np.clip(data[y, x] + temperatureContribution * (HOTSPOT_MAX_TEMPERATURE - data[y, x]),
+            # exp: e ** p
+            tempContribution = np.exp(-distance / (2 * spreadScale ** 2))
+            data[y, x] = np.clip(data[y, x] + tempContribution,
                                  HOTSPOT_MIN_TEMPERATURE, HOTSPOT_MAX_TEMPERATURE)
 
 
-# --- 4. 브루트 포스 핫스팟 탐색 ---
-def find_hotspots_bruteforce(data, threshold):
+# 4) search hotspot with brute force
+def findHotspots(data, threshold):
+    # nparray.shape -> check dimension
     rows, cols = data.shape
-    hotspot_candidates = []
+    hotspotCandidates = []
     for y in range(rows):
         for x in range(cols):
             if data[y, x] >= threshold:
-                # [x, y] 순서로 저장 (좌표계 관례에 따름)
-                hotspot_candidates.append([x, y])
-    return np.array(hotspot_candidates)
+                hotspotCandidates.append([x, y])
+    return np.array(hotspotCandidates)
 
+# operate brute force
+hotspotCandidates = findHotspots(data, HOTSPOT_THRESHOLD)
 
-# 브루트 포스 탐색 실행
-hotspot_coordinates = find_hotspots_bruteforce(data, HOTSPOT_THRESHOLD)
+# 5) operate DBSCAN(Density-Based Spatial Clustering of Applications with Noise) clustering, 
+#    check density of coordinates
+# 1. get hotspot label that is categorized with number
+# 2. get hotspot label of each cluster
+# 3. check center of each cluster
+if len(hotspotCandidates) > 0:
+    # create DBSCAN model and start learning by using fit
+    db = DBSCAN(eps=DBSCAN_EPS, min_samples=DBSCAN_MIN_SAMPLES).fit(hotspotCandidates)
 
-# --- 5. DBSCAN 군집화 실행 ---
-if len(hotspot_coordinates) > 0:
-    # DBSCAN 모델 생성 및 학습
-    db = DBSCAN(eps=DBSCAN_EPS, min_samples=DBSCAN_MIN_SAMPLES).fit(hotspot_coordinates)
-
-    # 각 데이터 포인트가 속한 군집 레이블 (-1은 노이즈)
+    # noise: -1, not be clustered
     labels = db.labels_
 
-    # 군집화된 핫스팟 중심점 계산
-    final_hotspots = []
+    clusteredHotspotCenter = []
 
-    # 고유한 군집 레이블 추출 (노이즈 -1 제외)
-    unique_labels = set(labels)
-    unique_labels.discard(-1)  # 노이즈 레이블 제거
+    # abstract unique clustered labels
+    uniqueLabels = set(labels)
+    uniqueLabels.discard(-1)  # remove noise
 
-    for k in unique_labels:
-        # 현재 군집(k)에 속하는 모든 포인트 추출
-        class_member_mask = (labels == k)
-        cluster_points = hotspot_coordinates[class_member_mask]
+    for k in uniqueLabels:
+        # abstract all clustered points, categorize each cluster
+        classMemberMask = (labels == k)
+        clusterPoints = hotspotCandidates[classMemberMask]
 
-        # 군집의 중심(Centroid) 계산 (x와 y 좌표의 평균)
-        center_x = int(np.mean(cluster_points[:, 0]))
-        center_y = int(np.mean(cluster_points[:, 1]))
+        # calculate center of clustered hotspot by averaging x, y
+        center_x = int(np.mean(clusterPoints[:, 0]))
+        center_y = int(np.mean(clusterPoints[:, 1]))
 
-        final_hotspots.append({'x': center_x, 'y': center_y, 'cluster_size': len(cluster_points)})
+        clusteredHotspotCenter.append({'x': center_x, 'y': center_y, 'cluster_size': len(clusterPoints)})
 else:
-    final_hotspots = []
+    clusteredHotspotCenter = []
     print("Warning: No hotspot candidates found above the threshold.")
 
-# --- 6. 시각화 (탐색된 핫스팟 중심 표시) ---
-
-# 원본 데이터 시각화
+# 6) visualize
+# 0. create basic map
 fig, ax = plt.subplots(figsize=(8, 10))
 cax = ax.imshow(
     data,
@@ -125,21 +128,21 @@ ax.set_title(f'Heatmap Simulation with DBSCAN Clustering', fontsize=14)
 ax.set_xticks(np.arange(0, COLS, 10))
 ax.set_yticks(np.arange(0, ROWS, 15))
 
-# A. 브루트 포스 탐색된 핫스팟 후보 위치 (배경)
-if len(hotspot_coordinates) > 0:
+# 1. scatter hotspot candidates
+if len(hotspotCandidates) > 0:
     ax.scatter(
-        hotspot_coordinates[:, 0],  # x 좌표
-        hotspot_coordinates[:, 1],  # y 좌표
+        hotspotCandidates[:, 0],  # x
+        hotspotCandidates[:, 1],  # y
         s=5,
         marker='.',
         color='lightcoral',
         alpha=0.3,
-        label=f'Brute Force Candidates ({len(hotspot_coordinates)} points)'
+        label=f'Brute Force Candidates ({len(hotspotCandidates)} points)'
     )
 
-# B. DBSCAN으로 찾은 최종 핫스팟 중심 위치 (파란색 다이아몬드)
-final_hotspotX = [h['x'] for h in final_hotspots]
-final_hotspotY = [h['y'] for h in final_hotspots]
+# 2. express hotspot center which is calculated by DBSCAN
+final_hotspotX = [h['x'] for h in clusteredHotspotCenter]
+final_hotspotY = [h['y'] for h in clusteredHotspotCenter]
 
 ax.scatter(
     final_hotspotX,
@@ -149,22 +152,22 @@ ax.scatter(
     color='blue',
     edgecolor='black',
     linewidths=1.5,
-    label=f'Clustered Hotspot Center ({len(final_hotspots)} found)'
+    label=f'Clustered Hotspot Center ({len(clusteredHotspotCenter)} found)'
 )
 
-# C. 실제 핫스팟 중심 위치 (비교를 위해 노란색 X로 표시)
-actual_hotspotX = [h['x'] for h in actual_hotspots]
-actual_hotspotY = [h['y'] for h in actual_hotspots]
+# 3. scatter actual hotspot center
+actualHotspotX = [h['x'] for h in actualHotspot]
+actualHotspotY = [h['y'] for h in actualHotspot]
 
 ax.scatter(
-    actual_hotspotX,
-    actual_hotspotY,
+    actualHotspotX,
+    actualHotspotY,
     s=300,
     marker='X',
     color='yellow',
     edgecolor='black',
     linewidths=1.5,
-    label='Actual Hotspot Center (Simulation Input)'
+    label='Actual Hotspot Center'
 )
 
 ax.legend()
