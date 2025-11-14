@@ -44,7 +44,7 @@ for hotspot in hotspots:
         for x in range(COLS):
             distance = (x - centerX) ** 2 + (y - centerY) ** 2
             temperatureContribution = np.exp(-distance / (2 * spreadScale ** 2))
-            data[y, x] = np.clip(data[y, x] + temperatureContribution * (HOTSPOT_MAX_TEMPERATURE - data[y, x]), HOTSPOT_MIN_TEMPERATURE, HOTSPOT_MAX_TEMPERATURE)
+            data[y, x] = np.clip(data[y, x] + temperatureContribution, HOTSPOT_MIN_TEMPERATURE, HOTSPOT_MAX_TEMPERATURE)
 
 basicFig, basicAx = plt.subplots(figsize=(8, 10))
 basicCax = basicAx.imshow(
